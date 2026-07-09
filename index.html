@@ -128,6 +128,187 @@
       const name = params.get('name') || "貴賓";
       const phone = params.get('phone') || "未填寫";
       const location = params.get('location') || "未填寫";
+      const trainer = params.get('trainer') || "未指定";
+      const datetime = params.get('datetime') || "未填寫";
+      const referer = params.get('referer') || "無";
+      const promocamp = params.get('promocamp') || "無";
+
+      const messageText = `《首次體驗預約資料》\n小編會盡快為您確認預約時段唷～\n\n【姓名】 ${name}\n【電話】 ${phone}\n【門市】 ${location}\n【指定教練】 ${trainer}\n【希望日期／時段】 ${datetime}\n【介紹人】 ${referer}\n【活動／優惠】 ${promocamp}`;
+
+      try {
+        if (!liff.isInClient()) throw new Error("外部瀏覽器無法使用 sendMessages");
+
+        await liff.sendMessages([{ type: 'text', text: messageText }]);
+
+        showState('success');
+        // 延遲一點點時間,讓使用者能看到成功畫面
+        setTimeout(() => liff.closeWindow(), 3500);
+
+      } catch (err) {
+        console.warn('降級方案啟動:', err);
+        // sendMessages 不可用(scope 未開通、或不在聊天室內開啟)時的最後手段:
+        // 直接關閉 LIFF、把使用者帶回官方帳號聊天室,訊息用「預填」而非「直接送出」的方式帶入輸入框。
+        // 注意:此分支只在 isInClient() 為 true 時才有意義(在聊天室內開啟 LIFF 但 sendMessages 失敗);
+        // 若本來就是在外部瀏覽器開啟(isInClient() 為 false),liff.closeWindow() 不會有作用,
+        // 這種情況改用真正的瀏覽器導頁去開啟官方帳號深度連結。
+        const encodedText = encodeURIComponent(messageText);
+        const oaMessageUrl = `https://line.me/R/oaMessage/${LINE_OA_ID}/?${encodedText}`;
+
+        if (liff.isInClient()) {
+          liff.closeWindow();
+        } else {
+          window.location.href = oaMessageUrl;
+        }
+      }
+    }
+
+    // 導向 Fillout 表單(整頁導頁,不用 iframe)。
+    // 原本用 iframe 嵌入表單時,Fillout「提交後導回」只會導向 iframe 自己的瀏覽情境,
+    // 不會讓最外層的 LIFF 頁面真的重新載入,導致 action=submit_done 那段邏輯
+    // 實際上是在巢狀的 iframe 裡執行,liff.sendMessages()/liff.closeWindow() 因此失效。
+    // 改成整頁導頁後,Fillout 提交後的導回就是對最上層視窗導頁,確保後續的
+    // LIFF API 呼叫都發生在 LINE App 直接控制的正確視窗裡。
+    function loadForm(userId) {
+      const url = new URL(FILL_OUT_BASE_URL);
+      if (userId) url.searchParams.set('userid', userId);
+      window.location.href = url.toString();
+    }
+
+    // 主程式入口
+    async function main() {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+
+        const params = new URLSearchParams(window.location.search);
+
+        // 1. 如果是從表單導回的回呼(Fillout 提交後導回,實際帶的是 action=completed,
+        //    要跟 Fillout 後台「Redirect on Submit」設定的網址參數值完全一致)
+        if (params.get('action') === 'completed') {
+          await sendMessageToOA(params);
+          return;
+        }
+
+        // 2. 判斷登入狀態
+        if (liff.isLoggedIn()) {
+          const profile = await liff.getProfile();
+          loadForm(profile.userId);
+        } else {
+          // 若在 LINE App 內,自動登入;若在外部,則顯示點擊按鈕登入
+          if (liff.isInClient()) {
+            liff.login({ redirectUri: window.location.href });
+          } else {
+            showState('landing');
+            document.getElementById('loginBtn').onclick = () => {
+              liff.login({ redirectUri: window.location.href });
+            };
+          }
+        }
+
+      } catch (err) {
+        console.error('LIFF Init Error:', err);
+        alert("系統連線異常,將直接跳轉表單");
+        loadForm("");
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>
+      visibility: visible;
+      z-index: 20;
+    }
+
+    /* 1. 載入中畫面 */
+    #loadingScreen { color: #64748b; font-size: 15px; z-index: 50; }
+    .spinner {
+      width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top: 4px solid #06c755;
+      border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* 2. 登入引導頁 */
+    .icon-box {
+      width: 90px; height: 90px; background: #06c755; border-radius: 24px; margin-bottom: 24px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 10px 20px rgba(6, 199, 85, 0.2);
+    }
+    .icon-box svg { width: 45px; height: 45px; fill: white; }
+    h1 { font-size: 22px; color: #1e293b; margin: 0 0 12px; font-weight: 700; }
+    p { font-size: 15px; color: #64748b; margin: 0 0 32px; line-height: 1.6; max-width: 400px; }
+
+    .btn-main {
+      display: block; width: 100%; max-width: 300px; padding: 16px 0;
+      background-color: #06c755; color: white;
+      border-radius: 50px; text-decoration: none; font-size: 16px; font-weight: bold;
+      box-shadow: 0 4px 12px rgba(6, 199, 85, 0.3);
+      cursor: pointer; border: none; outline: none; transition: all 0.2s;
+    }
+    .btn-main:active { opacity: 0.9; transform: scale(0.98); }
+
+    /* 3. 送出成功畫面 */
+    .success-icon {
+      width: 80px; height: 80px; background: #06c755; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 20px; box-shadow: 0 10px 20px rgba(6,199,85,0.2);
+    }
+    .success-icon svg { width: 40px; height: 40px; fill: white; }
+  </style>
+</head>
+<body>
+
+  <div id="loadingScreen" class="container active">
+    <div class="spinner"></div>
+    <div id="loadingText">系統連線中...</div>
+  </div>
+
+  <div id="loginLanding" class="container">
+    <div class="icon-box">
+      <svg viewBox="0 0 24 24"><path d="M21.6 11.2c0-4.6-4.3-8.4-9.6-8.4S2.4 6.6 2.4 11.2c0 4.1 3.6 7.6 8.4 8.2v0.1l-1.2 3.8c-0.1 0.4 0.2 0.7 0.5 0.7 0.2 0 0.3-0.1 0.4-0.1l4.9-3.4h0.1c3.5-0.6 6.1-4.1 6.1-8.3z"/></svg>
+    </div>
+    <h1>首次體驗預約</h1>
+    <p>為了提供更完整的服務<br>請先登入 LINE 帳號以繼續預約</p>
+    <button id="loginBtn" class="btn-main">以 LINE 登入並預約</button>
+  </div>
+
+  <div id="successScreen" class="container">
+    <div class="success-icon">
+      <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+    </div>
+    <h1>已將收到您的預約囉!</h1>
+    <p>請回到聊天室確認是否成功發送<br>《首次體驗預約資料》<br><br>如無,請返回訊息已完成填寫<br>我們會盡快與您確認資訊</p>
+    <button onclick="liff.closeWindow()" class="btn-main" style="background:#64748b">關閉視窗</button>
+  </div>
+
+  <script>
+    /***** 設定區域 *****/
+    const LIFF_ID = "2001467446-KNVd49W2";
+    const LINE_OA_ID = "@biu5388t";
+    const FILL_OUT_BASE_URL = "https://cicostudio.fillout.com/t/s2Q1z59UH1us";
+    /********************/
+
+    const loadingScreen = document.getElementById('loadingScreen');
+    const loadingText = document.getElementById('loadingText');
+    const loginLanding = document.getElementById('loginLanding');
+    const successScreen = document.getElementById('successScreen');
+
+    // 加入 CSS Fade 淡場效果的切換函式
+    function showState(state) {
+      document.querySelectorAll('.container').forEach(el => el.classList.remove('active'));
+
+      if (state === 'loading') loadingScreen.classList.add('active');
+      else if (state === 'landing') loginLanding.classList.add('active');
+      else if (state === 'success') successScreen.classList.add('active');
+    }
+
+    // 送出訊息流程
+    async function sendMessageToOA(params) {
+      showState('loading');
+      loadingText.innerText = "資料送出中,請稍候...";
+
+      const name = params.get('name') || "貴賓";
+      const phone = params.get('phone') || "未填寫";
+      const location = params.get('location') || "未填寫";
       const datetime = params.get('datetime') || "未填寫";
       const referer = params.get('referer') || "無";
       const promocamp = params.get('promocamp') || "無";
