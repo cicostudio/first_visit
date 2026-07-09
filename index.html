@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>首次體驗預約｜凝聚運動顧問</title>
+  <title>行銷｜首次體驗預約｜分潤表單</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 
   <style>
@@ -133,7 +133,7 @@
       const referer = params.get('referer') || "無";
       const promocamp = params.get('promocamp') || "無";
 
-      const messageText = `《首次體驗預約資料》\n小編會盡快為您確認預約時段唷～\n\n【姓名】 ${name}\n【電話】 ${phone}\n【門市】 ${location}\n【指定教練】 ${trainer}\n【希望日期／時段】 ${datetime}\n【介紹人】 ${referer}\n【活動／優惠】 ${promocamp}`;
+      const messageText = `首次體驗預約｜請按 ➤ 送出\n\n✦ ${name}  ${phone}\n✦ ${location}  ${trainer}\n✦ ${promocamp} ${referer}\n✦ 希望預約 ${datetime}\n\n小編會跟你確認時段喔！`;
 
       try {
         if (!liff.isInClient()) throw new Error("外部瀏覽器無法使用 sendMessages");
