@@ -64,14 +64,6 @@
       cursor: pointer; border: none; outline: none; transition: all 0.2s;
     }
     .btn-main:active { opacity: 0.9; transform: scale(0.98); }
-
-    /* 3. 送出成功畫面 */
-    .success-icon {
-      width: 80px; height: 80px; background: #06c755; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      margin-bottom: 20px; box-shadow: 0 10px 20px rgba(6,199,85,0.2);
-    }
-    .success-icon svg { width: 40px; height: 40px; fill: white; }
   </style>
 </head>
 <body>
@@ -90,15 +82,6 @@
     <button id="loginBtn" class="btn-main">以 LINE 登入並預約</button>
   </div>
 
-  <div id="successScreen" class="container">
-    <div class="success-icon">
-      <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-    </div>
-    <h1>已將收到您的預約囉!</h1>
-    <p>請回到聊天室確認是否成功發送<br>《首次體驗預約資料》<br><br>如無,請返回訊息已完成填寫<br>我們會盡快與您確認資訊</p>
-    <button onclick="liff.closeWindow()" class="btn-main" style="background:#64748b">關閉視窗</button>
-  </div>
-
   <script>
     /***** 設定區域 *****/
     const LIFF_ID = "2001467446-KNVd49W2";
@@ -109,7 +92,6 @@
     const loadingScreen = document.getElementById('loadingScreen');
     const loadingText = document.getElementById('loadingText');
     const loginLanding = document.getElementById('loginLanding');
-    const successScreen = document.getElementById('successScreen');
 
     // 加入 CSS Fade 淡場效果的切換函式
     function showState(state) {
@@ -117,7 +99,6 @@
 
       if (state === 'loading') loadingScreen.classList.add('active');
       else if (state === 'landing') loginLanding.classList.add('active');
-      else if (state === 'success') successScreen.classList.add('active');
     }
 
     // 送出訊息流程
@@ -135,25 +116,14 @@
 
       const messageText = `首次體驗預約｜請按 ➤ 送出\n\n✦ ${name}  ${phone}\n✦ ${location}  ${trainer}\n✦ ${promocamp} ${referer}\n✦ 希望預約 ${datetime}\n\n小編會跟你確認時段喔！`;
 
-      try {
-        if (!liff.isInClient()) throw new Error("外部瀏覽器無法使用 sendMessages");
-
-        await liff.sendMessages([{ type: 'text', text: messageText }]);
-
-        showState('success');
-        // 延遲一點點時間,讓使用者能看到成功畫面
-        setTimeout(() => liff.closeWindow(), 3500);
-
-      } catch (err) {
-        console.warn('降級方案啟動:', err);
-        // sendMessages 不可用(通常是 LIFF App 的 chat_message.write scope 沒開通)時的最後手段:
-        // 用 oaMessage 深度連結同時做到「切到官方帳號聊天室」+「把訊息預填進輸入框」,
-        // 不論目前是否在 LINE App 內開啟,都導向這個網址(單純 closeWindow() 不會有預填訊息,
-        // 也不保證會停在跟官方帳號的對話,這是上一版的錯誤寫法)。
-        const encodedText = encodeURIComponent(messageText);
-        const oaMessageUrl = `https://line.me/R/oaMessage/${LINE_OA_ID}/?${encodedText}`;
-        window.location.href = oaMessageUrl;
-      }
+      // 不論從哪裡開啟這個頁面(外部瀏覽器、好友分享連結、聊天室內...),一律用
+      // oaMessage 深度連結——官方帳號 ID 是寫死在網址裡的,保證訊息一定準確地
+      // 被預填進跟 @biu5388t 的對話輸入框。捨棄 liff.sendMessages() 的自動送出
+      // (它會受「目前所在聊天室」影響,無法保證一定送到指定官方帳號),
+      // 換取「不管從哪裡進來,目的地永遠正確」,使用者只需要自己按一下 LINE 的送出鍵。
+      const encodedText = encodeURIComponent(messageText);
+      const oaMessageUrl = `https://line.me/R/oaMessage/${LINE_OA_ID}/?${encodedText}`;
+      window.location.href = oaMessageUrl;
     }
 
     // 導向 Fillout 表單(整頁導頁,不用 iframe)。
@@ -162,9 +132,28 @@
     // 實際上是在巢狀的 iframe 裡執行,liff.sendMessages()/liff.closeWindow() 因此失效。
     // 改成整頁導頁後,Fillout 提交後的導回就是對最上層視窗導頁,確保後續的
     // LIFF API 呼叫都發生在 LINE App 直接控制的正確視窗裡。
-    function loadForm(userId) {
+    const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
+
+    // 讀取一開始打開 LIFF 網址時帶的 UTM 參數(例如 ?utm_campaign=mommy2026),
+    // 轉送給 Fillout 表單記錄,只轉送有值的參數,不會塞進空字串或 "null" 這種字面值。
+    // 這裡直接重新讀 window.location.search,不依賴 main() 裡的 params 變數,
+    // 確保就算 liff.init() 失敗、走到最後的 catch 分支也一樣讀得到。
+    function getUtmParams() {
+      const current = new URLSearchParams(window.location.search);
+      const utm = new URLSearchParams();
+      UTM_KEYS.forEach((key) => {
+        const value = current.get(key);
+        if (value) utm.set(key, value);
+      });
+      return utm;
+    }
+
+    function loadForm(userId, utmParams) {
       const url = new URL(FILL_OUT_BASE_URL);
       if (userId) url.searchParams.set('userid', userId);
+      if (utmParams) {
+        utmParams.forEach((value, key) => url.searchParams.set(key, value));
+      }
       window.location.href = url.toString();
     }
 
@@ -185,7 +174,7 @@
         // 2. 判斷登入狀態
         if (liff.isLoggedIn()) {
           const profile = await liff.getProfile();
-          loadForm(profile.userId);
+          loadForm(profile.userId, getUtmParams());
         } else {
           // 若在 LINE App 內,自動登入;若在外部,則顯示點擊按鈕登入
           if (liff.isInClient()) {
@@ -201,7 +190,7 @@
       } catch (err) {
         console.error('LIFF Init Error:', err);
         alert("系統連線異常,將直接跳轉表單");
-        loadForm("");
+        loadForm("", getUtmParams());
       }
     }
 
