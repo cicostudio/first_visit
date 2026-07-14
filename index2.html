@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>首次預約體驗｜凝聚運動顧問 Cico Studio｜台北中山｜新北板橋</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <style>
+    /* 基礎設定 */
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f8fafc;
+      height: 100vh;
+      overflow: hidden;
+      /* 防止 iOS 橡皮筋滾動 */
+      overscroll-behavior-y: none;
+    }
+
+    /* 全部疊在同一個容器,靠切換 class 換頁 */
+    .container {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 20px; box-sizing: border-box;
+      background: #f8fafc;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+      z-index: 10;
+    }
+
+    .container.active {
+      opacity: 1;
+      visibility: visible;
+      z-index: 20;
+    }
+
+    /* 1. 載入中畫面 */
+    #loadingScreen { color: #64748b; font-size: 15px; z-index: 50; }
+    .spinner {
+      width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top: 4px solid #06c755;
+      border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    h1 { font-size: 22px; color: #1e293b; margin: 0 0 12px; font-weight: 700; }
+    p { font-size: 15px; color: #64748b; margin: 0 0 32px; line-height: 1.6; max-width: 400px; }
+
+    .btn-main {
+      display: block; width: 100%; max-width: 300px; padding: 16px 0;
+      background-color: #06c755; color: white;
+      border-radius: 50px; text-decoration: none; font-size: 16px; font-weight: bold;
+      box-shadow: 0 4px 12px rgba(6, 199, 85, 0.3);
+      cursor: pointer; border: none; outline: none; transition: all 0.2s;
+    }
+    .btn-main:active { opacity: 0.9; transform: scale(0.98); }
+
+    /* 2. 送出成功畫面 */
+    .success-icon {
+      width: 80px; height: 80px; background: #06c755; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 20px; box-shadow: 0 10px 20px rgba(6,199,85,0.2);
+    }
+    .success-icon svg { width: 40px; height: 40px; fill: white; }
+  </style>
+</head>
+<body>
+
+  <div id="loadingScreen" class="container active">
+    <div class="spinner"></div>
+    <div id="loadingText">系統連線中...</div>
+  </div>
+
+  <div id="successScreen" class="container">
+    <div class="success-icon">
+      <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+    </div>
+    <h1>已將收到您的預約囉!</h1>
+    <p>請回到聊天室確認是否成功發送<br>《首次體驗預約資料》<br><br>如無,請返回訊息已完成填寫<br>我們會盡快與您確認資訊</p>
+    <button onclick="liff.closeWindow()" class="btn-main" style="background:#64748b">關閉視窗</button>
+  </div>
+
+  <script>
+    /***** 設定區域 *****/
+    const LIFF_ID = "2001467446-KNVd49W2";
+    const LINE_OA_ID = "@biu5388t";
+    const FILL_OUT_BASE_URL = "https://cicostudio.fillout.com/t/s2Q1z59UH1us";
+    /********************/
+
+    const loadingScreen = document.getElementById('loadingScreen');
+    const loadingText = document.getElementById('loadingText');
+    const successScreen = document.getElementById('successScreen');
+
+    // 加入 CSS Fade 淡場效果的切換函式
+    function showState(state) {
+      document.querySelectorAll('.container').forEach(el => el.classList.remove('active'));
+
+      if (state === 'loading') loadingScreen.classList.add('active');
+      else if (state === 'success') successScreen.classList.add('active');
+    }
+
+    // sendMessages() 只有在「真的從聊天室開啟 LIFF」時才可能成功:
+    // isInClient() 為 true 只代表「在 LINE App 內」,context.type 才是真正判斷
+    // 「是不是從聊天室(1對1/群組/多人聊天室)點開」的依據,兩個條件都要滿足。
+    function isChatContext() {
+      if (!liff.isInClient()) return false;
+      const context = liff.getContext();
+      return ['utou', 'room', 'group', 'square_chat'].includes(context?.type);
+    }
+
+    // 送出訊息流程
+    async function sendMessageToOA(params) {
+      showState('loading');
+      loadingText.innerText = "請在 LINE 按 ➤ 送出預約";
+
+      const name = params.get('name') || "貴賓";
+      const phone = params.get('phone') || "未填寫";
+      const location = params.get('location') || "未填寫";
+      const trainer = params.get('trainer') || "未指定";
+      const datetime = params.get('datetime') || "未填寫";
+      const referer = params.get('referer') || "無";
+      const promocamp = params.get('promocamp') || "無";
+
+      const messageText = `首次體驗預約｜請按 ➤ 送出\n\n✦ ${name}  ${phone}\n✦ ${location}  ${trainer}\n✦ ${promocamp} ${referer}\n✦ 希望預約 ${datetime}\n\n小編會跟你確認時段喔！`;
+
+      try {
+        if (!isChatContext()) throw new Error("非聊天室情境,無法使用 sendMessages");
+
+        await liff.sendMessages([{ type: 'text', text: messageText }]);
+
+        showState('success');
+        // 延遲一點點時間,讓使用者能看到成功畫面
+        setTimeout(() => liff.closeWindow(), 3500);
+
+      } catch (err) {
+        console.warn('降級方案啟動(oaMessage 預填):', err);
+        // sendMessages 不可用時的最後安全網(scope 未開通、非聊天室情境、網路異常等):
+        // 用 oaMessage 深度連結同時做到「切到官方帳號聊天室」+「把訊息預填進輸入框」,
+        // 讓使用者自己按送出,確保無論如何都不會發生「什麼都沒發生」的情況。
+        const encodedText = encodeURIComponent(messageText);
+        const oaMessageUrl = `https://line.me/R/oaMessage/${LINE_OA_ID}/?${encodedText}`;
+        window.location.href = oaMessageUrl;
+      }
+    }
+
+    // 導向 Fillout 表單(整頁導頁,不用 iframe)。
+    // 原本用 iframe 嵌入表單時,Fillout「提交後導回」只會導向 iframe 自己的瀏覽情境,
+    // 不會讓最外層的 LIFF 頁面真的重新載入,導致 action=submit_done 那段邏輯
+    // 實際上是在巢狀的 iframe 裡執行,liff.sendMessages()/liff.closeWindow() 因此失效。
+    // 改成整頁導頁後,Fillout 提交後的導回就是對最上層視窗導頁,確保後續的
+    // LIFF API 呼叫都發生在 LINE App 直接控制的正確視窗裡。
+    function loadForm(userId) {
+      const url = new URL(FILL_OUT_BASE_URL);
+      if (userId) url.searchParams.set('userid', userId);
+      window.location.href = url.toString();
+    }
+
+    // 主程式入口
+    async function main() {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+
+        const params = new URLSearchParams(window.location.search);
+
+        // 1. 如果是從表單導回的回呼(Fillout 提交後導回,實際帶的是 action=completed,
+        //    要跟 Fillout 後台「Redirect on Submit」設定的網址參數值完全一致)
+        if (params.get('action') === 'completed') {
+          await sendMessageToOA(params);
+          return;
+        }
+
+        // 2. 判斷登入狀態
+        // 這個版本假設一律從 LINE 對話視窗開啟,不提供額外的按鈕/QR code 引導頁,
+        // 未登入時直接觸發 liff.login() 自動導向登入。
+        if (liff.isLoggedIn()) {
+          const profile = await liff.getProfile();
+          loadForm(profile.userId);
+        } else {
+          liff.login({ redirectUri: window.location.href });
+        }
+
+      } catch (err) {
+        console.error('LIFF Init Error:', err);
+        alert("系統連線異常,將直接跳轉表單");
+        loadForm("");
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>
