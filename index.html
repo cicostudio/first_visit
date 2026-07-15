@@ -104,6 +104,7 @@
   <script>
     /***** 設定區域 *****/
     const LIFF_ID = "2001467446-KNVd49W2";
+    const LIFF_URL = "https://liff.line.me/2001467446-KNVd49W2";
     const LINE_OA_ID = "@biu5388t";
     const FILL_OUT_BASE_URL = "https://cicostudio.fillout.com/t/s2Q1z59UH1us";
     /********************/
@@ -128,8 +129,20 @@
       return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent);
     }
 
-    // 用目前這個網址(含原本帶進來的 utm 參數)產生 QR Code,手機掃描後
-    // 開啟的就是同一個網址、同一組 utm,追蹤鏈路不會中斷。
+    // 重新組出正確的 LIFF 網址(帶上目前的 utm 參數),不能直接用 window.location.href——
+    // 桌面瀏覽器打開 https://liff.line.me/{liffId} 時,如果沒有 LINE App 接手,
+    // 常常會被導向到這個頁面實際 host 的網址(例如 GitHub Pages 網域),
+    // 這時 window.location.href 抓到的就不是 liff.line.me 這個網址了。
+    // QR Code 跟按鈕都必須明確指向真正的 liff.line.me 網址,手機掃描/點擊後
+    // 才能透過 LIFF 正確喚起 LINE App,而不是在手機瀏覽器打開一個普通網頁。
+    function buildLiffUrlWithUtm() {
+      const url = new URL(LIFF_URL);
+      getUtmParams().forEach((value, key) => url.searchParams.set(key, value));
+      return url.toString();
+    }
+
+    // 用正確的 LIFF 網址(含 utm)產生 QR Code,手機掃描後會透過 LIFF
+    // 正確喚起 LINE App,而不是直接在手機瀏覽器開啟一個普通網頁。
     function renderQrCode(url) {
       document.getElementById('qrcode').innerHTML = '';
       new QRCode(document.getElementById('qrcode'), {
@@ -218,10 +231,13 @@
         //    LINE App 內一定沒問題(不論是手機版還是桌面版 LINE App),不受這個檢查影響。
         if (!liff.isInClient() && !isMobileDevice()) {
           showState('qrcode');
-          renderQrCode(window.location.href);
-          // 保留一鍵跳轉按鈕,因應 User-Agent 判斷失準、其實是手機卻被誤判成桌面的例外狀況
+          const liffUrlWithUtm = buildLiffUrlWithUtm();
+          renderQrCode(liffUrlWithUtm);
+          // 保留一鍵跳轉按鈕,因應 User-Agent 判斷失準、其實是手機卻被誤判成桌面的例外狀況;
+          // 導向跟 QR Code 完全一樣的 LIFF 網址,而不是呼叫 liff.login(),
+          // 確保兩條路徑的結果一致。
           document.getElementById('qrFallbackBtn').onclick = () => {
-            liff.login({ redirectUri: window.location.href });
+            window.location.href = liffUrlWithUtm;
           };
           return;
         }
