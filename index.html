@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>首次預約體驗｜凝聚運動顧問 Cico Studio｜台北中山｜新北板橋</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 
   <style>
     /* 基礎設定 */
@@ -64,6 +65,13 @@
       cursor: pointer; border: none; outline: none; transition: all 0.2s;
     }
     .btn-main:active { opacity: 0.9; transform: scale(0.98); }
+
+    /* 3. 桌面版 QR Code 引導頁 */
+    .qrcode-box {
+      background: white; padding: 16px; border-radius: 16px; margin-bottom: 24px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); display: inline-block;
+    }
+    .qr-fallback-text { font-size: 13px; color: #94a3b8; margin: 0 0 12px; max-width: none; }
   </style>
 </head>
 <body>
@@ -82,6 +90,17 @@
     <button id="loginBtn" class="btn-main">以 LINE 登入並預約</button>
   </div>
 
+  <div id="qrLanding" class="container">
+    <div class="icon-box">
+      <svg viewBox="0 0 24 24"><path d="M21.6 11.2c0-4.6-4.3-8.4-9.6-8.4S2.4 6.6 2.4 11.2c0 4.1 3.6 7.6 8.4 8.2v0.1l-1.2 3.8c-0.1 0.4 0.2 0.7 0.5 0.7 0.2 0 0.3-0.1 0.4-0.1l4.9-3.4h0.1c3.5-0.6 6.1-4.1 6.1-8.3z"/></svg>
+    </div>
+    <h1>首次體驗預約</h1>
+    <p>請使用手機掃描下方 QR Code<br>開啟 LINE 完成預約</p>
+    <div id="qrcode" class="qrcode-box"></div>
+    <p class="qr-fallback-text">已經在用手機瀏覽了嗎?</p>
+    <button id="qrFallbackBtn" class="btn-main">直接開啟 LINE 預約</button>
+  </div>
+
   <script>
     /***** 設定區域 *****/
     const LIFF_ID = "2001467446-KNVd49W2";
@@ -92,6 +111,7 @@
     const loadingScreen = document.getElementById('loadingScreen');
     const loadingText = document.getElementById('loadingText');
     const loginLanding = document.getElementById('loginLanding');
+    const qrLanding = document.getElementById('qrLanding');
 
     // 加入 CSS Fade 淡場效果的切換函式
     function showState(state) {
@@ -99,6 +119,26 @@
 
       if (state === 'loading') loadingScreen.classList.add('active');
       else if (state === 'landing') loginLanding.classList.add('active');
+      else if (state === 'qrcode') qrLanding.classList.add('active');
+    }
+
+    // 粗略判斷是不是手機瀏覽器。這裡判斷錯的唯一後果是顯示錯的引導畫面,
+    // 不影響資料正確性,所以用簡單的 User-Agent 判斷就足夠,不需要更複雜的偵測。
+    function isMobileDevice() {
+      return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent);
+    }
+
+    // 用目前這個網址(含原本帶進來的 utm 參數)產生 QR Code,手機掃描後
+    // 開啟的就是同一個網址、同一組 utm,追蹤鏈路不會中斷。
+    function renderQrCode(url) {
+      document.getElementById('qrcode').innerHTML = '';
+      new QRCode(document.getElementById('qrcode'), {
+        text: url,
+        width: 200,
+        height: 200,
+        colorDark: '#1e293b',
+        colorLight: '#ffffff',
+      });
     }
 
     // 送出訊息流程
@@ -171,20 +211,34 @@
           return;
         }
 
-        // 2. 判斷登入狀態
+        // 2. 裝置環境檢查:一開始就先擋下桌面瀏覽器,不管登入狀態如何都優先判斷這一關。
+        //    因為最後一步的 oaMessage 深度連結只有手機上的 LINE App 才接得住,
+        //    桌面瀏覽器就算登入過、走完全部流程,最後一步也不會有任何效果,
+        //    所以不能只在「未登入」的分支裡才做這個判斷。
+        //    LINE App 內一定沒問題(不論是手機版還是桌面版 LINE App),不受這個檢查影響。
+        if (!liff.isInClient() && !isMobileDevice()) {
+          showState('qrcode');
+          renderQrCode(window.location.href);
+          // 保留一鍵跳轉按鈕,因應 User-Agent 判斷失準、其實是手機卻被誤判成桌面的例外狀況
+          document.getElementById('qrFallbackBtn').onclick = () => {
+            liff.login({ redirectUri: window.location.href });
+          };
+          return;
+        }
+
+        // 3. 判斷登入狀態
         if (liff.isLoggedIn()) {
           const profile = await liff.getProfile();
           loadForm(profile.userId, getUtmParams());
+        } else if (liff.isInClient()) {
+          // 在 LINE App 內,自動登入
+          liff.login({ redirectUri: window.location.href });
         } else {
-          // 若在 LINE App 內,自動登入;若在外部,則顯示點擊按鈕登入
-          if (liff.isInClient()) {
+          // 走到這裡一定是手機瀏覽器(桌面瀏覽器已經在上面被攔下了)
+          showState('landing');
+          document.getElementById('loginBtn').onclick = () => {
             liff.login({ redirectUri: window.location.href });
-          } else {
-            showState('landing');
-            document.getElementById('loginBtn').onclick = () => {
-              liff.login({ redirectUri: window.location.href });
-            };
-          }
+          };
         }
 
       } catch (err) {
