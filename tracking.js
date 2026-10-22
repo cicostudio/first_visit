@@ -79,6 +79,7 @@
     if (!window.fbq) {
       !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
     }
+    try { getFbp(); } catch (e) {}
     fbq('init', CFG.pixel, attr.vid ? { external_id: attr.vid } : {});
     fbq('track', 'PageView');
 
@@ -96,9 +97,22 @@
   }
 
   // 要接力轉給 Fillout / QR Code 的參數（全部有值的追蹤參數）
+  // Meta 瀏覽器編號（_fbp cookie）。Pixel 還沒載入完成時先自己產生同格式的值，
+  // Pixel 載入後會沿用同一個 cookie，兩邊一致。
+  function getFbp() {
+    var m = document.cookie.match(/(?:^|;\s*)_fbp=([^;]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    var v = 'fb.1.' + Date.now() + '.' + Math.floor(Math.random() * 1e10);
+    document.cookie = '_fbp=' + v + '; path=/; max-age=' + 90 * 86400 + '; SameSite=Lax';
+    return v;
+  }
+
   function params() {
     var p = new URLSearchParams();
     KEYS.forEach(function (k) { if (attr[k]) p.set(k, attr[k]); });
+    // 給伺服器端轉換 API（Meta CAPI）比對用
+    p.set('ua', navigator.userAgent);
+    try { p.set('fbp', getFbp()); } catch (e) {}
     return p;
   }
 
