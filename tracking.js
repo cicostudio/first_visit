@@ -20,6 +20,7 @@
   var KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
               'fbclid', 'gclid', 'ttclid', 'lp', 'cta', 'vid', 'gcid'];
   var STORE = 'nj_attr', TTL = 7 * 864e5;
+  var PII = ['name', 'phone', 'location', 'trainer', 'datetime', 'referer', 'promocamp'];
   var attr = {}, ready = false;
 
   function readStore() {
@@ -55,7 +56,10 @@
     window.gtag = window.gtag || function () { dataLayer.push(arguments); };
     loadScript('https://www.googletagmanager.com/gtag/js?id=' + CFG.ga4);
     gtag('js', new Date());
-    var gaCfg = { page_location: location.href, page_type: 'liff-booking' };
+    // 只在送給 GA4 的頁面網址裡拿掉表單個資；瀏覽器網址列本身完全不動
+    var clean = new URL(location.href);
+    PII.forEach(function (k) { clean.searchParams.delete(k); });
+    var gaCfg = { page_location: clean.toString(), page_type: 'liff-booking' };
     if (attr.gcid) gaCfg.client_id = attr.gcid;
     if (!fresh && attr.utm_source) {   // 從表單導回時網址已沒有 UTM，補上原始來源
       gaCfg.campaign_source = attr.utm_source;
@@ -65,6 +69,11 @@
       if (attr.utm_term) gaCfg.campaign_term = attr.utm_term;
     }
     gtag('config', CFG.ga4, gaCfg);
+
+    // Meta Pixel 與 LINE Tag 會自動帶上完整網址；表單導回頁的網址含姓名電話，
+    // 所以這一頁暫不載入（待決定做法），其他頁面照常。
+    var hasPII = PII.some(function (k) { return q.get(k); });
+    if (hasPII) return attr;
 
     // Meta Pixel
     if (!window.fbq) {
@@ -112,8 +121,8 @@
       var value = info.value || 1999;
       var eventId = 'booking_' + hk;
       event('booking_complete', { store: info.store, value: value, currency: 'TWD' });
-      try { fbq('track', 'Schedule', { value: value, currency: 'TWD', content_name: '一對一首次體驗' }, { eventID: eventId }); } catch (e) {}
-      try { _lt('send', 'cv', { type: 'Conversion' }, [CFG.lineTag]); } catch (e) {}
+      if (window.fbq) try { fbq('track', 'Schedule', { value: value, currency: 'TWD', content_name: '一對一首次體驗' }, { eventID: eventId }); } catch (e) {}
+      if (window._lt) try { _lt('send', 'cv', { type: 'Conversion' }, [CFG.lineTag]); } catch (e) {}
     }
     if (done) setTimeout(done, already ? 0 : 900);
   }

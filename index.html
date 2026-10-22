@@ -230,13 +230,9 @@
       try {
         await liff.init({ liffId: LIFF_ID });
 
-        const params = new URLSearchParams(window.location.search);
-        // 表單導回的網址帶有姓名、電話,先從網址列移除,避免被 GA4 / Meta 當成頁面網址記錄(個資)。
-        // params 已經先讀進變數,後續流程不受影響。
-        if (params.get('action')) {
-          history.replaceState(null, '', window.location.pathname + '?action=' + encodeURIComponent(params.get('action')));
-        }
         NJTrack.init();   // 一定要在 liff.init 之後:參數這時才從 liff.state 還原到網址上
+
+        const params = new URLSearchParams(window.location.search);
 
         // 1. 如果是從表單導回的回呼(Fillout 提交後導回,實際帶的是 action=completed,
         //    要跟 Fillout 後台「Redirect on Submit」設定的網址參數值完全一致)
