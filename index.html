@@ -6,6 +6,7 @@
   <title>首次預約體驗｜凝聚運動顧問 Cico Studio｜台北中山｜新北板橋</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="tracking.js?v=1"></script>
 
   <style>
     /* 基礎設定 */
@@ -137,7 +138,7 @@
     // 才能透過 LIFF 正確喚起 LINE App,而不是在手機瀏覽器打開一個普通網頁。
     function buildLiffUrlWithUtm() {
       const url = new URL(LIFF_URL);
-      getUtmParams().forEach((value, key) => url.searchParams.set(key, value));
+      getTrackingParams().forEach((value, key) => url.searchParams.set(key, value));
       return url.toString();
     }
 
@@ -176,7 +177,11 @@
       // 換取「不管從哪裡進來,目的地永遠正確」,使用者只需要自己按一下 LINE 的送出鍵。
       const encodedText = encodeURIComponent(messageText);
       const oaMessageUrl = `https://line.me/R/oaMessage/${LINE_OA_ID}/?${encodedText}`;
-      window.location.href = oaMessageUrl;
+      // 回報預約轉換（GA4 / Meta / LINE Tag），送出後才跳轉；同一筆預約只算一次
+      NJTrack.bookingComplete({
+        dedupeKey: [phone, datetime].join('|'),
+        store: location
+      }, () => { window.location.href = oaMessageUrl; });
     }
 
     // 導向 Fillout 表單(整頁導頁,不用 iframe)。
@@ -201,13 +206,23 @@
       return utm;
     }
 
+    // 所有追蹤參數(UTM + 介紹頁帶來的 lp/cta/vid/gcid/fbclid/gclid),
+    // 由 tracking.js 保存,就算網址上已經沒有也拿得到。
+    function getTrackingParams() {
+      const p = (window.NJTrack && NJTrack.params()) || new URLSearchParams();
+      getUtmParams().forEach((value, key) => { if (!p.get(key)) p.set(key, value); });
+      return p;
+    }
+
     function loadForm(userId, utmParams) {
       const url = new URL(FILL_OUT_BASE_URL);
       if (userId) url.searchParams.set('userid', userId);
       if (utmParams) {
         utmParams.forEach((value, key) => url.searchParams.set(key, value));
       }
-      window.location.href = url.toString();
+      if (window.NJTrack) NJTrack.event('booking_form_open', {});
+      // 讓 GA4 事件先送出再跳轉到 Fillout
+      setTimeout(() => { window.location.href = url.toString(); }, 300);
     }
 
     // 主程式入口
@@ -216,6 +231,12 @@
         await liff.init({ liffId: LIFF_ID });
 
         const params = new URLSearchParams(window.location.search);
+        // 表單導回的網址帶有姓名、電話,先從網址列移除,避免被 GA4 / Meta 當成頁面網址記錄(個資)。
+        // params 已經先讀進變數,後續流程不受影響。
+        if (params.get('action')) {
+          history.replaceState(null, '', window.location.pathname + '?action=' + encodeURIComponent(params.get('action')));
+        }
+        NJTrack.init();   // 一定要在 liff.init 之後:參數這時才從 liff.state 還原到網址上
 
         // 1. 如果是從表單導回的回呼(Fillout 提交後導回,實際帶的是 action=completed,
         //    要跟 Fillout 後台「Redirect on Submit」設定的網址參數值完全一致)
@@ -245,13 +266,14 @@
         // 3. 判斷登入狀態
         if (liff.isLoggedIn()) {
           const profile = await liff.getProfile();
-          loadForm(profile.userId, getUtmParams());
+          loadForm(profile.userId, getTrackingParams());
         } else if (liff.isInClient()) {
           // 在 LINE App 內,自動登入
           liff.login({ redirectUri: window.location.href });
         } else {
           // 走到這裡一定是手機瀏覽器(桌面瀏覽器已經在上面被攔下了)
           showState('landing');
+          NJTrack.event('liff_login_prompt', {});
           document.getElementById('loginBtn').onclick = () => {
             liff.login({ redirectUri: window.location.href });
           };
@@ -259,8 +281,9 @@
 
       } catch (err) {
         console.error('LIFF Init Error:', err);
+        NJTrack.init();
         alert("系統連線異常,將直接跳轉表單");
-        loadForm("", getUtmParams());
+        loadForm("", getTrackingParams());
       }
     }
 
